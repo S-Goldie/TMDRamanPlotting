@@ -7,13 +7,16 @@ from FunctionBank import RamanPeakInfo, get_color_gradient
 h = 4.1356692*10**-15 #eV s
 c = 3.0*10**8 #m/s
 lam = 532 #nm
-os.chdir(os.getcwd() + r"\FilesToAnalyze")
-filenames = [f for f in os.listdir(os.getcwd()) if f.endswith('.txt')]
+
+#Change here to alter file locations
+directory = r"C:\Users\sgold\Documents\Waterloo PostDoc\THA Intercalation\Raman\MoS2_1TControl"
+filenames = [f for f in os.listdir(directory) if f.endswith('.txt')]
 
 plt.figure("Raman")
 for i, filename in enumerate(filenames):
     #Keep in mind, the wavenumber goes from highest to lowest. Indices might need to be reversed.
-    data = np.genfromtxt(filename, dtype=None, delimiter='\t')
+    data_path = os.path.join(directory, filename)
+    data = np.genfromtxt(data_path, dtype=None, delimiter='\t')
 
     #Cutting off the PL array by the wavenumber
     PL_split_index = np.where(data[:,0] < 1100)[0][0]
@@ -97,6 +100,6 @@ plt.show()
 # except FileExistsError:
 #     print(f"Directory '{directory_name}' already exists.")
 
-np.savetxt(f"{filename[:-4]}_normalized.csv", normal_data.T, delimiter=',', header='Wave,Intensity,'*len(filenames), comments='')
-np.savetxt(f"{filename[:-4]}_PL.csv", PL_data.T, delimiter=',', header='Energy,Intensity,'*len(filenames), comments='')
-np.savetxt(f"{filename[:-4]}_Summary.csv", data_summary, fmt='%s', delimiter=',', header='Sample Name,E2g Peak/cm-1,A1g Peak/cm-1,Raman Peak Difference/cm-1,Photoluminescence Peak/eV', comments='')
+np.savetxt(f"{directory}{filename[:-4]}_normalized.csv", normal_data.T, delimiter=',', header='Wave,Intensity,'*len(filenames), comments='')
+np.savetxt(f"{directory}{filename[:-4]}_PL.csv", PL_data.T, delimiter=',', header='Energy,Intensity,'*len(filenames), comments='')
+np.savetxt(f"{directory}{filename[:-4]}_Summary.csv", data_summary, fmt='%s', delimiter=',', header='Sample Name,E2g Peak/cm-1,A1g Peak/cm-1,Raman Peak Difference/cm-1,Photoluminescence Peak/eV', comments='')
