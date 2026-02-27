@@ -48,6 +48,23 @@ def multiple_output(destination, source):
     peak_output(destination, source, 'si')
     peak_output(destination, source, 'e2g')
     peak_output(destination, source, 'a1g')
+
+def estimate_noise_sliding_poly(row_data, window_size=21, poly_order=2):
+    """Estimate noise by fitting a degree-2 polynomial to a sliding window and
+    computing the mean absolute difference between the data and the fit."""
+    n = len(row_data)
+    half_window = window_size // 2
+    indices = np.arange(n)
+    window_errors = []
+    for i in range(n):
+        window_start = max(0, i - half_window)
+        window_end = min(n, i + half_window + 1)
+        win_idx = indices[window_start:window_end]
+        win_data = row_data[window_start:window_end]
+        coeffs = np.polyfit(win_idx, win_data, poly_order)
+        fitted = np.polyval(coeffs, win_idx)
+        window_errors.append(np.mean(np.abs(win_data - fitted)))
+    return np.mean(window_errors)
    
 
 h = 4.1356692*10**-15 #eV s
@@ -145,19 +162,10 @@ print_flag = 'none'
 null_fit_list = []
 null_fit_count = 0
 
-rank = bkgd_map_data.shape[0]
-error_list = []
-
-for row_data in bkgd_map_data[1:]:
-    row_errors = []
-    for i in range(len(row_data)):
-        window_start = max(0, i - 5)
-        window_end = min(len(row_data), i + 6)
-        error_value = np.std(row_data[window_start:window_end])
-        row_errors.append(error_value)
-    error_list.append(row_errors)
-
-error_array = np.mean(np.array(error_list), axis=1)
+error_array = np.array([
+    estimate_noise_sliding_poly(row_data)
+    for row_data in bkgd_map_data[1:]
+])
 
 #Specify peak models needed during fitting
 si_peak = LorentzianModel(nan_policy='propagate',prefix='si_')
