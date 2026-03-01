@@ -307,6 +307,97 @@ print(f'Mean Si peak position = {np.mean(result_array[:,2]):.2f} cm⁻¹')
 print(f'Range Si peak position = {np.max(result_array[:,2]) - np.min(result_array[:,2]):.2f} cm⁻¹')
 print(f'Mean TMD peak separation = {np.mean(result_array[:,24]):.2f} cm⁻¹')
 print(f'SD TMD peak separation = {np.std(result_array[:,24]):.2f} cm⁻¹')
-
 #%% Photoluminescence
-# Converting and analysing PL spectra    
+# Converting and analysing PL spectra
+
+#Parsing photoluminescence data sets
+PL_files = [f for f in filenames if '_PL' in f]
+PL_wavenumbers = []
+initialised_flag = False
+
+for PL_index, filename in enumerate(PL_files):
+    current_PL_data = np.genfromtxt(os.path.join(directory, filename), dtype=None, delimiter='\t')
+    PL_wavenumbers.append(current_PL_data[:,0])
+    PL_split_index = np.where(current_PL_data[:,0] < 1100)[0][0]
+    raman_split_Lindex = PL_split_index + np.where(current_PL_data[PL_split_index:,0] < 450)[0][0]
+        
+    [A1g_peak_index, E2g_peak_index] = find_raman_peaks(current_PL_data, 0)
+    normal_intensity = current_PL_data[:,1]/(current_PL_data[A1g_peak_index,1])
+        
+    E_exc = (h*c*10**9)/lam
+    E_stokes = h*c*10**2*current_PL_data[:PL_split_index,0]
+    PL_energy = E_exc - E_stokes
+    PL_intensity = normal_intensity[:PL_split_index]
+    
+    PL_peak_index = np.argmax(normal_intensity[:PL_split_index])
+    PL_peak_energy = round(PL_energy[PL_peak_index], 6)
+    PL_peak_intensity = round(PL_intensity[PL_peak_index], 3)
+        
+    if initialised_flag == False:
+        normal_data = {}
+        PL_data = {}
+        initialised_flag = True
+
+    sample_name = filename[:-4]
+    normal_data[sample_name] = {
+        "wave": current_PL_data[:,0],
+        "intensity": normal_intensity
+    }
+    PL_data[sample_name] = {
+        "energy": PL_energy,
+        "intensity": PL_intensity
+    }
+
+plt.figure("Photoluminescence", figsize=[7, 7/1.6])
+for count, sample_name in enumerate(PL_data.keys()):
+    plt.plot(
+        PL_data[sample_name]["energy"],
+        PL_data[sample_name]["intensity"],
+        label=f' {sample_name}',
+        color=get_color_gradient("#FE9800", "#000065", len(PL_files))[count],
+        linestyle='solid'
+    )
+plt.title("Photoluminescence Peak")
+plt.xlabel("Energy / $eV$")
+plt.ylabel("Relative Intensity")
+plt.tight_layout()
+plt.savefig(os.path.join(directory, "PL.png"), dpi=600)
+
+#Export photoluminescence data
+if all(np.array_equal(arr, PL_wavenumbers[0]) for arr in PL_wavenumbers):
+    with open(os.path.join(directory, "normalized_spectra.csv"), "w", newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        header = ["Wave"] + list(normal_data.keys())
+        writer.writerow(header)
+        wave = next(iter(normal_data.values()))["wave"]
+        for i in range(len(wave)):
+            row = [wave[i]] + [normal_data[sample]["intensity"][i] for sample in normal_data]
+            writer.writerow(row)
+
+    with open(os.path.join(directory, "PL_data.csv"), "w", newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        header = ["Energy"] + list(PL_data.keys())
+        writer.writerow(header)
+        energy = next(iter(PL_data.values()))["energy"]
+        for i in range(len(energy)):
+            row = [energy[i]] + [PL_data[sample]["intensity"][i] for sample in PL_data]
+            writer.writerow(row)
+else:
+    with open(os.path.join(directory, "normalized_spectra.csv"), "w", newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        for sample_name in normal_data.keys():
+            writer.writerow([f"{sample_name}_Wave", f"{sample_name}_Intensity"])
+            wave = normal_data[sample_name]["wave"]
+            intensity = normal_data[sample_name]["intensity"]
+            for i in range(len(wave)):
+                writer.writerow([wave[i], intensity[i]])
+
+    with open(os.path.join(directory, "PL_data.csv"), "w", newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        for sample_name in PL_data.keys():
+            writer.writerow([f"{sample_name}_Energy", f"{sample_name}_Intensity"])
+            energy = PL_data[sample_name]["energy"]
+            intensity = PL_data[sample_name]["intensity"]
+            for i in range(len(energy)):
+                writer.writerow([energy[i], intensity[i]])
+   
