@@ -49,6 +49,15 @@ def multiple_output(destination, source):
     peak_output(destination, source, 'e2g')
     peak_output(destination, source, 'a1g')
 
+def multiple_output_PL(destination, source):
+    """stores fitted outputs for each PL peak in turn"""
+    peak_output(destination, source, 'xb')
+    peak_output(destination, source, 'xa')
+    xtneg_result = {}
+    peak_output(xtneg_result, source, 'xtneg')
+    for key in list(xtneg_result.keys()):
+        destination[key.replace('xtneg', 'xt-', 1)] = xtneg_result[key]
+
 def estimate_noise_sliding_poly(row_data, window_size=21, poly_order=2):
     """Estimate noise by fitting a degree-2 polynomial to a sliding window and
     computing the mean absolute difference between the data and the fit."""
@@ -315,6 +324,16 @@ PL_files = [f for f in filenames if '_PL' in f]
 PL_wavenumbers = []
 initialised_flag = False
 
+xb_peak = LorentzianModel(nan_policy='propagate', prefix='xb_')
+xa_peak = LorentzianModel(nan_policy='propagate', prefix='xa_')
+xtneg_peak = LorentzianModel(nan_policy='propagate', prefix='xtneg_')
+poly_PL = PolynomialModel(0, nan_policy='propagate', prefix='PLbkgd_')
+model_PL = poly_PL + xb_peak + xa_peak + xtneg_peak
+PL_results = []
+PL_XB_CENTER = 2.0    # eV, starting center for xb peak
+PL_XA_CENTER = 1.88   # eV, starting center for xa peak
+PL_XTNEG_CENTER = 1.82  # eV, starting center for xt- peak
+
 for PL_index, filename in enumerate(PL_files):
     current_PL_data = np.genfromtxt(os.path.join(directory, filename), dtype=None, delimiter='\t')
     PL_wavenumbers.append(current_PL_data[:,0])
@@ -329,6 +348,36 @@ for PL_index, filename in enumerate(PL_files):
     PL_energy = E_exc - E_stokes
     PL_intensity = normal_intensity[:PL_split_index]
     
+    pars_PL = poly_PL.guess(PL_intensity, x=PL_energy)
+    pars_PL.update(xb_peak.guess(PL_intensity, x=PL_energy))
+    pars_PL['xb_center'].set(value=PL_XB_CENTER)
+    pars_PL.update(xa_peak.guess(PL_intensity, x=PL_energy))
+    pars_PL['xa_center'].set(value=PL_XA_CENTER)
+    pars_PL.update(xtneg_peak.guess(PL_intensity, x=PL_energy))
+    pars_PL['xtneg_center'].set(value=PL_XTNEG_CENTER)
+    out_PL = model_PL.fit(PL_intensity, pars_PL, x=PL_energy)
+
+    if 'report' in print_flag:
+        print(f'PL Spectrum: {filename}')
+        print(out_PL.fit_report(show_correl=False))
+
+    if 'plot' in print_flag:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(PL_energy, PL_intensity, 'o', label='Data', markersize=4)
+        ax.plot(PL_energy, out_PL.best_fit, '-', label='Fit', linewidth=2)
+        ax.set_xlabel('Energy (eV)')
+        ax.set_ylabel('Relative Intensity')
+        ax.set_title(f'PL Spectrum: {filename}')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.show()
+
+    PL_fit_result = {'sample': filename[:-4]}
+    multiple_output_PL(PL_fit_result, out_PL)
+    PL_fit_result.update({'Red Chi2': out_PL.redchi})
+    PL_results.append(PL_fit_result)
+
     PL_peak_index = np.argmax(normal_intensity[:PL_split_index])
     PL_peak_energy = round(PL_energy[PL_peak_index], 6)
     PL_peak_intensity = round(PL_intensity[PL_peak_index], 3)
@@ -400,4 +449,27 @@ else:
             intensity = PL_data[sample_name]["intensity"]
             for i in range(len(energy)):
                 writer.writerow([energy[i], intensity[i]])
+
+PL_fit_headings = [
+    "sample",
+    "xb_amplitude", "xb_amplitude_error",
+    "xb_center", "xb_center_error",
+    "xb_fwhm", "xb_fwhm_error",
+    "xb_height", "xb_height_error",
+    "xa_amplitude", "xa_amplitude_error",
+    "xa_center", "xa_center_error",
+    "xa_fwhm", "xa_fwhm_error",
+    "xa_height", "xa_height_error",
+    "xt-_amplitude", "xt-_amplitude_error",
+    "xt-_center", "xt-_center_error",
+    "xt-_fwhm", "xt-_fwhm_error",
+    "xt-_height", "xt-_height_error",
+    "Red Chi2"
+]
+
+with open(os.path.join(directory, "PL_fitting.txt"), "w", newline='') as txtfile:
+    writer = csv.writer(txtfile)
+    writer.writerow(PL_fit_headings)
+    for row in PL_results:
+        writer.writerow([row.get(h, '') for h in PL_fit_headings])
    
