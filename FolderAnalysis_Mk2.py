@@ -225,7 +225,8 @@ try:
     poly2 = PolynomialModel(1,nan_policy='propagate', prefix='Background_')
     model_p = poly2
     model_si = poly2 + si_peak
-    model_tmd = poly2 + si_peak + e2g_peak + a1g_peak
+    model_tmd = poly2 + e2g_peak + a1g_peak
+    model_full = poly2 + si_peak + e2g_peak + a1g_peak
     a1g_up = peak_configs[material]["A1g_upper"]
     a1g_up_index = np.argmin(np.abs(map_x - a1g_up))
     a1g_low = peak_configs[material]["A1g_lower"]
@@ -235,29 +236,31 @@ try:
     #Complete fitting sequence. By validating an improvement in fit with each model, low quality data is excluded
     for spectrum_index, spectral_data in enumerate(raman_modes_map_data[1:,:]):
         pars_poly2 = poly2.guess(spectral_data, x=map_x)
+        pars_poly2['Background_c0'].set(np.mean(bkgd_map_data[spectrum_index,:]), min=0)
         out_poly = model_p.fit(spectral_data, pars_poly2, x=map_x)
         pars_si = poly2.guess(bkgd_map_data[spectrum_index,:], x=bkgd_map_data[0,:])
         pars_si.update(si_peak.guess(si_map_data[spectrum_index,:], x=si_map_data[0,:]))
+        pars_si['Background_c0'].set(np.mean(bkgd_map_data[spectrum_index,:]), min=0)
         pars_si['si_center'].set(min=515, max=525)
         pars_si['si_amplitude'].set(min=1.e-09)
-        pars_si['si_sigma'].set(max=10)
+        pars_si['si_sigma'].set(max=100)
         out_si = model_si.fit(spectral_data, pars_si, x=map_x)
         if ((out_si.redchi)/(out_poly.redchi)) < 0.975:
-            pars_tmd = poly2.guess(bkgd_map_data[spectrum_index,:], x=bkgd_map_data[0,:])
-            pars_tmd['Background_c0'].set(np.mean(bkgd_map_data[spectrum_index,:]), min=0)
-            pars_tmd.update(si_peak.guess(si_map_data[spectrum_index,:], x=si_map_data[0,:]))
-            pars_tmd['si_center'].set(min=505, max=535)
-            pars_tmd['si_amplitude'].set(min=1.e-09)
-            pars_tmd['si_sigma'].set(2, max=10)
-            pars_tmd.update(e2g_peak.guess(spectral_data[a1g_low_index:e2g_low_index], x=map_x[a1g_low_index:e2g_low_index]))
-            pars_tmd['e2g_center'].set(min=e2g_low, max=a1g_low)
-            pars_tmd['e2g_amplitude'].set(min=1.e-09)
-            pars_tmd['e2g_sigma'].set(max=10)
-            pars_tmd.update(a1g_peak.guess(spectral_data[a1g_up_index:a1g_low_index], x=map_x[a1g_up_index:a1g_low_index]))
-            pars_tmd['a1g_center'].set(min=a1g_low, max=a1g_up)
-            pars_tmd['a1g_amplitude'].set(min=1.e-09)
-            pars_tmd['a1g_sigma'].set(max=10)
-            out_tmd = model_tmd.fit(spectral_data, pars_tmd, x=map_x)
+            pars_full = poly2.guess(bkgd_map_data[spectrum_index,:], x=bkgd_map_data[0,:])
+            pars_full['Background_c0'].set(np.mean(bkgd_map_data[spectrum_index,:]), min=0)
+            pars_full.update(si_peak.guess(si_map_data[spectrum_index,:], x=si_map_data[0,:]))
+            pars_full['si_center'].set(min=505, max=535)
+            pars_full['si_amplitude'].set(min=1.e-09)
+            pars_full['si_sigma'].set(2, max=100)
+            pars_full.update(e2g_peak.guess(spectral_data[a1g_low_index:e2g_low_index], x=map_x[a1g_low_index:e2g_low_index]))
+            pars_full['e2g_center'].set(min=e2g_low, max=a1g_low)
+            pars_full['e2g_amplitude'].set(min=1.e-09)
+            pars_full['e2g_sigma'].set(max=100)
+            pars_full.update(a1g_peak.guess(spectral_data[a1g_up_index:a1g_low_index], x=map_x[a1g_up_index:a1g_low_index]))
+            pars_full['a1g_center'].set(min=a1g_low, max=a1g_up)
+            pars_full['a1g_amplitude'].set(min=1.e-09)
+            pars_full['a1g_sigma'].set(max=100)
+            out_tmd = model_full.fit(spectral_data, pars_full, x=map_x)
             
             if ((out_tmd.redchi)/(out_si.redchi)) < 0.975:
                 full_result = {}
@@ -296,11 +299,11 @@ try:
             pars_tmd.update(e2g_peak.guess(spectral_data[a1g_low_index:e2g_low_index], x=map_x[a1g_low_index:e2g_low_index]))
             pars_tmd['e2g_center'].set(min=e2g_low, max=a1g_low)
             pars_tmd['e2g_amplitude'].set(min=1.e-09)
-            pars_tmd['e2g_sigma'].set(max=10)
+            pars_tmd['e2g_sigma'].set(max=100)
             pars_tmd.update(a1g_peak.guess(spectral_data[a1g_up_index:a1g_low_index], x=map_x[a1g_up_index:a1g_low_index]))
             pars_tmd['a1g_center'].set(min=a1g_low, max=a1g_up)
             pars_tmd['a1g_amplitude'].set(min=1.e-09)
-            pars_tmd['a1g_sigma'].set(max=10)
+            pars_tmd['a1g_sigma'].set(max=100)
             out_tmd = model_tmd.fit(spectral_data, pars_tmd, x=map_x)
 
             if ((out_tmd.redchi)/(out_poly.redchi)) < 0.975:
@@ -326,8 +329,8 @@ try:
                     full_result.update({'a1g-e2g_spacing': (full_result['a1g_center'] - full_result['e2g_center'])})
                     full_result.update({'a1g-e2g_spacing_error': (np.sqrt(full_result['a1g_center_error']**2 + full_result['e2g_center_error']**2))})
                     full_result.update({'spectrum_index': spectrum_index})
-                    full_result.update({"si_amplitude": 0.0, "si_amplitude_error": 0.0, "si_center": 0.0, "si_center_error": 0.0, 
-                                        "si_fwhm": 0.0, "si_fwhm_error": 0.0, "si_height": 0.0, "si_height_error": 0.0})
+                    full_result.update({"si_amplitude": np.nan, "si_amplitude_error": np.nan, "si_center": np.nan, "si_center_error": np.nan, 
+                                        "si_fwhm": np.nan, "si_fwhm_error": np.nan, "si_height": np.nan, "si_height_error": np.nan})
                     results.append(full_result)
                 
                 except ValueError:
@@ -380,7 +383,7 @@ try:
     # hypothesis that the data comes from a normal distribution.
     shapiro_test = stats.shapiro(result_array[:,25])
          
-    silicon_position = np.mean(result_array[:,3])
+    silicon_position = np.nanmean(result_array[:,3])
     if silicon_position < 519:
         print('**Silicon peak is out of expected range**')
         print('Spectrometer may be incorrectly calibrated')
@@ -389,7 +392,7 @@ try:
         print('Spectrometer may be incorrectly calibrated')
     
     print(f'Mean Si peak position = {silicon_position:.2f} cm⁻¹')
-    print(f'Range Si peak position = {np.max(result_array[:,3]) - np.min(result_array[:,3]):.2f} cm⁻¹')
+    print(f'Range Si peak position = {np.nanmax(result_array[:,3]) - np.nanmin(result_array[:,3]):.2f} cm⁻¹')
     print('\n' \
     '____TMD Stats____')
     
@@ -675,4 +678,5 @@ try:
         for row in PL_results:
             writer.writerow([row.get(h, '') for h in PL_fit_headings])
 except NameError:
+
     print('No PL files found in selected directory. Ensure all files are suffixed \'_PL\'.')
