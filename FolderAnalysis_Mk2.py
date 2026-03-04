@@ -54,14 +54,22 @@ def multiple_output(destination, source, silicon=True):
     peak_output(destination, source, 'e2g')
     peak_output(destination, source, 'a1g')
 
-def multiple_output_PL(destination, source):
+def multiple_output_PL(destination, source, use_trion=True):
     """stores fitted outputs for each PL peak in turn"""
     peak_output(destination, source, 'xb')
     peak_output(destination, source, 'xa')
-    xtneg_result = {}
-    peak_output(xtneg_result, source, 'xtneg')
-    for key in list(xtneg_result.keys()):
-        destination[key.replace('xtneg', 'xt-', 1)] = xtneg_result[key]
+    if use_trion:
+        xtneg_result = {}
+        peak_output(xtneg_result, source, 'xtneg')
+        for key in list(xtneg_result.keys()):
+            destination[key.replace('xtneg', 'xt-', 1)] = xtneg_result[key]
+    else:
+        destination.update({
+            'xt-_amplitude': np.nan, 'xt-_amplitude_error': np.nan,
+            'xt-_center': np.nan, 'xt-_center_error': np.nan,
+            'xt-_fwhm': np.nan, 'xt-_fwhm_error': np.nan,
+            'xt-_height': np.nan, 'xt-_height_error': np.nan
+        })
 
 def hex_to_RGB(hex_str):
     """ #FFFFFF -> [255,255,255]"""
@@ -135,6 +143,8 @@ def format_with_error(value, error):
         return f"{value} ± 0"
 
     abs_err = abs(error)
+    if math.isnan(abs_err) or math.isnan(value):
+        return "N/A"
 
     exponent = math.floor(math.log10(abs_err))
     first_digit = int(abs_err / 10**exponent)
@@ -467,6 +477,7 @@ xb_peak = LorentzianModel(nan_policy='propagate', prefix='xb_')
 xa_peak = LorentzianModel(nan_policy='propagate', prefix='xa_')
 xtneg_peak = LorentzianModel(nan_policy='propagate', prefix='xtneg_')
 poly_PL = PolynomialModel(0, nan_policy='propagate', prefix='PLbkgd_')
+model_PL_AB = poly_PL + xb_peak + xa_peak
 model_PL = poly_PL + xb_peak + xa_peak + xtneg_peak
 PL_results = []
 PL_intensites = []
@@ -489,6 +500,15 @@ try:
         PL_energy = E_exc - E_stokes
         PL_intensity = normal_intensity[:PL_split_index]
 
+        pars_PL_AB = poly_PL.guess(PL_intensity, x=PL_energy)
+        pars_PL_AB.update(xb_peak.guess(PL_intensity, x=PL_energy))
+        pars_PL_AB['xb_center'].set(value=PL_XB_CENTER)
+        pars_PL_AB['xb_amplitude'].set(min=1.e-09)
+        pars_PL_AB.update(xa_peak.guess(PL_intensity, x=PL_energy))
+        pars_PL_AB['xa_center'].set(value=PL_XA_CENTER)
+        pars_PL_AB['xa_amplitude'].set(min=1.e-09)
+        out_PL_AB = model_PL_AB.fit(PL_intensity, pars_PL_AB, x=PL_energy)
+
         pars_PL = poly_PL.guess(PL_intensity, x=PL_energy)
         pars_PL.update(xb_peak.guess(PL_intensity, x=PL_energy))
         pars_PL['xb_center'].set(value=PL_XB_CENTER)
@@ -501,6 +521,10 @@ try:
         pars_PL['xtneg_amplitude'].set(min=1.e-09)
         out_PL = model_PL.fit(PL_intensity, pars_PL, x=PL_energy)
 
+        use_trion = (out_PL.redchi / out_PL_AB.redchi) < 0.975
+        if not use_trion:
+            out_PL = out_PL_AB
+
         if 'report' in pl_flag:
             print(f'PL Spectrum: {filename}')
             print(out_PL.fit_report(show_correl=False))
@@ -511,7 +535,8 @@ try:
             ax.plot(PL_energy, out_PL.best_fit, '-', label='Fit', linewidth=1)
             ax.plot(PL_energy, out_PL.eval_components(x=PL_energy)['xb_'], '--', label='$X_B$ Peak', linewidth=1.5)
             ax.plot(PL_energy, out_PL.eval_components(x=PL_energy)['xa_'], '--', label='$X_A$ Peak', linewidth=1.5)
-            ax.plot(PL_energy, out_PL.eval_components(x=PL_energy)['xtneg_'], '--', label='$X_{T^-}$ Peak', linewidth=1.5)
+            if use_trion:
+                ax.plot(PL_energy, out_PL.eval_components(x=PL_energy)['xtneg_'], '--', label='$X_{T^-}$ Peak', linewidth=1.5)
             ax.set_xlabel('Energy / eV', fontname='Arial', fontsize=12)
             ax.set_ylabel('Relative Intensity', fontname='Arial', fontsize=12)
             ax.set_title(f'PL Spectrum: {filename}', fontname='Arial', fontsize=12)
@@ -521,11 +546,15 @@ try:
             plt.savefig(os.path.join(directory, str(filename) + "PL fit.png"), dpi=600)
 
         PL_fit_result = {"sample": filename[:-4]}
-        multiple_output_PL(PL_fit_result, out_PL)
+        multiple_output_PL(PL_fit_result, out_PL, use_trion=use_trion)
         PL_fit_result.update({"Red Chi2": out_PL.redchi})
-        trion_ratio = PL_fit_result['xa_amplitude'] / PL_fit_result['xt-_amplitude']
-        trion_ratio_error = trion_ratio * np.sqrt((PL_fit_result['xa_amplitude_error'] / PL_fit_result['xa_amplitude'])**2 
-                                                  + (PL_fit_result['xt-_amplitude_error'] / PL_fit_result['xt-_amplitude'])**2)
+        if use_trion:
+            trion_ratio = PL_fit_result['xa_amplitude'] / PL_fit_result['xt-_amplitude']
+            trion_ratio_error = trion_ratio * np.sqrt((PL_fit_result['xa_amplitude_error'] / PL_fit_result['xa_amplitude'])**2 
+                                                      + (PL_fit_result['xt-_amplitude_error'] / PL_fit_result['xt-_amplitude'])**2)
+        else:
+            trion_ratio = np.nan
+            trion_ratio_error = np.nan
         PL_fit_result.update({"Xa/Xt ratio": trion_ratio, "Xa/Xt ratio_error": trion_ratio_error})
         PL_results.append(PL_fit_result)
 
@@ -558,8 +587,9 @@ try:
             print(f'A Exciton Energy = {formatted_xa} eV')
             formatted_xb = format_with_error(PL_fit_result['xb_center'], PL_fit_result['xb_center_error'])
             print(f'B Exciton Energy = {formatted_xb} eV')
-            formatted_xt = format_with_error(PL_fit_result['xt-_center'], PL_fit_result['xt-_center_error'])
-            print(f'Trion Energy = {formatted_xt} eV')
+            if use_trion:
+                formatted_xt = format_with_error(PL_fit_result['xt-_center'], PL_fit_result['xt-_center_error'])
+                print(f'Trion Energy = {formatted_xt} eV')
 
     plt.figure(figsize=(12/2.54, 9/2.54))
     for count, sample_name in enumerate(PL_data.keys()):
@@ -582,24 +612,31 @@ try:
     
     #Calculate summary statistics of the PL data
     n_results = len(PL_results)
-    xa_xt_ratios = [result.get("Xa/Xt ratio", 0) for result in PL_results]
+    xa_xt_ratios = [result.get("Xa/Xt ratio", np.nan) for result in PL_results]
     xa_centers = [result.get("xa_center", 0) for result in PL_results]
     xb_centers = [result.get("xb_center", 0) for result in PL_results]
-    xt_centers = [result.get("xt-_center", 0) for result in PL_results]
+    xt_centers = [result.get("xt-_center", np.nan) for result in PL_results]
     xa_amplitudes = [result.get("xa_amplitude", 0) for result in PL_results]
-    xt_amplitudes = [result.get("xt-_amplitude", 0) for result in PL_results]
-    total_amplitudes = [xa + xt for xa, xt in zip(xa_amplitudes, xt_amplitudes)]
+    xt_amplitudes = [result.get("xt-_amplitude", np.nan) for result in PL_results]
+    total_amplitudes = [xa + (xt if not np.isnan(xt) else 0) for xa, xt in zip(xa_amplitudes, xt_amplitudes)]
 
     means = {
-        'xa_xt': np.mean(xa_xt_ratios),
+        'xa_xt': np.nanmean(xa_xt_ratios),
         'xa': np.mean(xa_centers),
         'xb': np.mean(xb_centers),
-        'xt': np.mean(xt_centers),
+        'xt': np.nanmean(xt_centers),
         'total_amp': np.mean(total_amplitudes),
     }
     
-    stds = {k: np.std(v) / np.sqrt(n_results) for k, v in 
-            [('xa_xt', xa_xt_ratios), ('xa', xa_centers), ('xb', xb_centers), ('xt', xt_centers), ('total_amp', total_amplitudes)]}
+    n_xa_xt = sum(1 for v in xa_xt_ratios if not np.isnan(v))
+    n_xt = sum(1 for v in xt_centers if not np.isnan(v))
+    stds = {
+        'xa_xt': np.nanstd(xa_xt_ratios) / np.sqrt(n_xa_xt) if n_xa_xt > 0 else np.nan,
+        'xa': np.std(xa_centers) / np.sqrt(n_results),
+        'xb': np.std(xb_centers) / np.sqrt(n_results),
+        'xt': np.nanstd(xt_centers) / np.sqrt(n_xt) if n_xt > 0 else np.nan,
+        'total_amp': np.std(total_amplitudes) / np.sqrt(n_results),
+    }
     
     formatted_ratio = format_with_error(means['xa_xt'], stds['xa_xt'])
     formatted_xa = format_with_error(means['xa'], stds['xa'])
@@ -611,7 +648,7 @@ try:
     print(f'Mean Photoluminescence Intensity = {np.mean(PL_intensites):.2f}')
     print(f'Range Photoluminescence Intensity = {np.max(PL_intensites) - np.min(PL_intensites):.2f}')
     print(f'Exciton/Trion Ratio = {formatted_ratio}')
-    print(f'Range Exciton/Trion Ratio = {np.max([result.get("Xa/Xt ratio", 0) for result in PL_results]) - np.min([result.get("Xa/Xt ratio", 0) for result in PL_results]):.2f}')
+    print(f'Range Exciton/Trion Ratio = {np.nanmax([result.get("Xa/Xt ratio", np.nan) for result in PL_results]) - np.nanmin([result.get("Xa/Xt ratio", np.nan) for result in PL_results]):.2f}')
     print(f'A Exciton Energy = {formatted_xa}')
     print(f'Trion Energy = {formatted_xt}')
     print(f'B Exciton Energy = {formatted_xb}')
