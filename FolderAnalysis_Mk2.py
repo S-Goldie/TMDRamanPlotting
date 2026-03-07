@@ -237,7 +237,6 @@ try:
     lam_peak = LorentzianModel(nan_policy='propagate', prefix='lam_')
     poly2 = PolynomialModel(1,nan_policy='propagate', prefix='Background_')
     model_p = poly2
-    model_si = poly2 + si_peak
     model_tmd = poly2 + e2g_peak + a1g_peak + lam_peak
     model_full = poly2 + si_peak + e2g_peak + a1g_peak + lam_peak
     lam_up = peak_configs[material]["2LA(M)_upper"]
@@ -248,122 +247,110 @@ try:
     a1g_low_index = np.argmin(np.abs(map_x - a1g_low))
     e2g_low = peak_configs[material]["E2g_lower"]
     e2g_low_index = np.argmin(np.abs(map_x - e2g_low))
-    #Complete fitting sequence. By validating an improvement in fit with each model, low quality data is excluded
+    #Complete fitting sequence. All three models are tried for each spectrum; the best improvement
+    #over the polynomial background is selected, with the full model (silicon included) taking priority.
     for spectrum_index, spectral_data in enumerate(raman_modes_map_data[1:,:]):
         pars_poly2 = poly2.guess(spectral_data, x=map_x)
         pars_poly2['Background_c0'].set(np.mean(bkgd_map_data[spectrum_index,:]), min=0)
         out_poly = model_p.fit(spectral_data, pars_poly2, x=map_x)
-        pars_si = poly2.guess(bkgd_map_data[spectrum_index,:], x=bkgd_map_data[0,:])
-        pars_si.update(si_peak.guess(si_map_data[spectrum_index,:], x=si_map_data[0,:]))
-        pars_si['Background_c0'].set(np.mean(bkgd_map_data[spectrum_index,:]), min=0)
-        pars_si['si_center'].set(min=515, max=525)
-        pars_si['si_amplitude'].set(min=1.e-09)
-        pars_si['si_sigma'].set(max=100)
-        out_si = model_si.fit(spectral_data, pars_si, x=map_x)
-        print(out_poly.fit_report(show_correl=False))
-        print(out_si.fit_report(show_correl=False))
-        if ((out_si.chisqr)/(out_poly.chisqr)) < 0.975:
-            pars_full = poly2.guess(bkgd_map_data[spectrum_index,:], x=bkgd_map_data[0,:])
-            pars_full['Background_c0'].set(np.mean(bkgd_map_data[spectrum_index,:]), min=0)
-            pars_full.update(si_peak.guess(si_map_data[spectrum_index,:], x=si_map_data[0,:]))
-            pars_full['si_center'].set(min=505, max=535)
-            pars_full['si_amplitude'].set(min=1.e-09)
-            pars_full['si_sigma'].set(2, max=100)
-            pars_full.update(e2g_peak.guess(spectral_data[a1g_low_index:e2g_low_index], x=map_x[a1g_low_index:e2g_low_index]))
-            pars_full['e2g_center'].set(min=e2g_low, max=a1g_low)
-            pars_full['e2g_amplitude'].set(min=1.e-09)
-            pars_full['e2g_sigma'].set(max=100)
-            pars_full.update(a1g_peak.guess(spectral_data[a1g_up_index:a1g_low_index], x=map_x[a1g_up_index:a1g_low_index]))
-            pars_full['a1g_center'].set(min=a1g_low, max=a1g_up)
-            pars_full['a1g_amplitude'].set(min=1.e-09)
-            pars_full['a1g_sigma'].set(max=100)
-            pars_full.update(lam_peak.guess(spectral_data[lam_up_index:a1g_up_index], x=map_x[lam_up_index:a1g_up_index]))
-            pars_full['lam_center'].set(min=a1g_up, max=lam_up)
-            pars_full['lam_amplitude'].set(min=1.e-09)
-            #pars_full['lam_sigma'].set(max=200)
-            out_tmd = model_full.fit(spectral_data, pars_full, x=map_x)
+
+        pars_tmd = poly2.guess(bkgd_map_data[spectrum_index,:], x=bkgd_map_data[0,:])
+        pars_tmd['Background_c0'].set(np.mean(bkgd_map_data[spectrum_index,:]), min=0)
+        pars_tmd.update(e2g_peak.guess(spectral_data[a1g_low_index:e2g_low_index], x=map_x[a1g_low_index:e2g_low_index]))
+        pars_tmd['e2g_center'].set(min=e2g_low, max=a1g_low)
+        pars_tmd['e2g_amplitude'].set(min=1.e-09)
+        pars_tmd['e2g_sigma'].set(max=100)
+        pars_tmd.update(a1g_peak.guess(spectral_data[a1g_up_index:a1g_low_index], x=map_x[a1g_up_index:a1g_low_index]))
+        pars_tmd['a1g_center'].set(min=a1g_low, max=a1g_up)
+        pars_tmd['a1g_amplitude'].set(min=1.e-09)
+        pars_tmd['a1g_sigma'].set(max=100)
+        pars_tmd.update(lam_peak.guess(spectral_data[lam_up_index:a1g_up_index], x=map_x[lam_up_index:a1g_up_index]))
+        pars_tmd['lam_center'].set(min=a1g_up, max=lam_up)
+        pars_tmd['lam_amplitude'].set(min=1.e-09)
+        #pars_tmd['lam_sigma'].set(max=100)
+        out_tmd_no_si = model_tmd.fit(spectral_data, pars_tmd, x=map_x)
+
+        pars_full = poly2.guess(bkgd_map_data[spectrum_index,:], x=bkgd_map_data[0,:])
+        pars_full['Background_c0'].set(np.mean(bkgd_map_data[spectrum_index,:]), min=0)
+        pars_full.update(si_peak.guess(si_map_data[spectrum_index,:], x=si_map_data[0,:]))
+        pars_full['si_center'].set(min=505, max=535)
+        pars_full['si_amplitude'].set(min=1.e-09)
+        pars_full['si_sigma'].set(2, max=100)
+        pars_full.update(e2g_peak.guess(spectral_data[a1g_low_index:e2g_low_index], x=map_x[a1g_low_index:e2g_low_index]))
+        pars_full['e2g_center'].set(min=e2g_low, max=a1g_low)
+        pars_full['e2g_amplitude'].set(min=1.e-09)
+        pars_full['e2g_sigma'].set(max=100)
+        pars_full.update(a1g_peak.guess(spectral_data[a1g_up_index:a1g_low_index], x=map_x[a1g_up_index:a1g_low_index]))
+        pars_full['a1g_center'].set(min=a1g_low, max=a1g_up)
+        pars_full['a1g_amplitude'].set(min=1.e-09)
+        pars_full['a1g_sigma'].set(max=100)
+        pars_full.update(lam_peak.guess(spectral_data[lam_up_index:a1g_up_index], x=map_x[lam_up_index:a1g_up_index]))
+        pars_full['lam_center'].set(min=a1g_up, max=lam_up)
+        pars_full['lam_amplitude'].set(min=1.e-09)
+        #pars_full['lam_sigma'].set(max=200)
+        out_tmd_full = model_full.fit(spectral_data, pars_full, x=map_x)
+
+        if ((out_tmd_full.redchi)/(out_poly.redchi)) < 0.975:
+            full_result = {}
+            if 'report' in map_flag:
+                print(f'Spectrum: {spectrum_index}')
+                print(out_tmd_full.fit_report(show_correl=False))
             
-            if ((out_tmd.redchi)/(out_si.redchi)) < 0.975:
-                full_result = {}
-                if 'report' in map_flag:
-                    print(f'Spectrum: {spectrum_index}')
-                    print(out_tmd.fit_report(show_correl=False))
-                
-                if 'plot' in map_flag:
-                    fig, ax = plt.subplots(figsize=(10, 6))
-                    ax.plot(map_x, spectral_data, 'o', label='Data', markersize=4)
-                    ax.plot(map_x, out_tmd.best_fit, '-', label='Fit', linewidth=2)
-                    ax.set_xlabel('Wavenumber / cm⁻¹')
-                    ax.set_ylabel('Intensity / counts')
-                    ax.set_title(f'Spectrum {spectrum_index + 1}')
-                    ax.legend()
-                    ax.grid(True, alpha=0.3)
-                    plt.tight_layout()
-                    plt.show()
-                
-                try:
-                    multiple_output(full_result, out_tmd)
-                    full_result.update({'a1g-e2g_spacing': (full_result['a1g_center'] - full_result['e2g_center'])})
-                    full_result.update({'a1g-e2g_spacing_error': (np.sqrt(full_result['a1g_center_error']**2 + full_result['e2g_center_error']**2))})
-                    full_result.update({'spectrum_index': spectrum_index})
-                    results.append(full_result)
-                
-                except ValueError:
-                    null_fit_count += 1
-                    null_fit_list.append(spectrum_index + 1)
-            else:
+            if 'plot' in map_flag:
+                fig, ax = plt.subplots(figsize=(10, 6))
+                ax.plot(map_x, spectral_data, 'o', label='Data', markersize=4)
+                ax.plot(map_x, out_tmd_full.best_fit, '-', label='Fit', linewidth=2)
+                ax.set_xlabel('Wavenumber / cm⁻¹')
+                ax.set_ylabel('Intensity / counts')
+                ax.set_title(f'Spectrum {spectrum_index + 1}')
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+                plt.tight_layout()
+                plt.show()
+            
+            try:
+                multiple_output(full_result, out_tmd_full)
+                full_result.update({'a1g-e2g_spacing': (full_result['a1g_center'] - full_result['e2g_center'])})
+                full_result.update({'a1g-e2g_spacing_error': (np.sqrt(full_result['a1g_center_error']**2 + full_result['e2g_center_error']**2))})
+                full_result.update({'spectrum_index': spectrum_index})
+                results.append(full_result)
+            
+            except ValueError:
+                null_fit_count += 1
+                null_fit_list.append(spectrum_index + 1)
+        elif ((out_tmd_no_si.redchi)/(out_poly.redchi)) < 0.975:
+            full_result = {}
+            if 'report' in map_flag:
+                print(f'Spectrum: {spectrum_index}')
+                print(out_tmd_no_si.fit_report(show_correl=False))
+            
+            if 'plot' in map_flag:
+                fig, ax = plt.subplots(figsize=(10, 6))
+                ax.plot(map_x, spectral_data, 'o', label='Data', markersize=4)
+                ax.plot(map_x, out_tmd_no_si.best_fit, '-', label='Fit', linewidth=2)
+                ax.set_xlabel('Wavenumber / cm⁻¹')
+                ax.set_ylabel('Intensity / counts')
+                ax.set_title(f'Spectrum {spectrum_index + 1}')
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+                plt.tight_layout()
+                plt.show()
+            
+            try:
+                multiple_output(full_result, out_tmd_no_si, silicon=False)
+                full_result.update({'a1g-e2g_spacing': (full_result['a1g_center'] - full_result['e2g_center'])})
+                full_result.update({'a1g-e2g_spacing_error': (np.sqrt(full_result['a1g_center_error']**2 + full_result['e2g_center_error']**2))})
+                full_result.update({'spectrum_index': spectrum_index})
+                full_result.update({"si_amplitude": np.nan, "si_amplitude_error": np.nan, "si_center": np.nan, "si_center_error": np.nan, 
+                                    "si_fwhm": np.nan, "si_fwhm_error": np.nan, "si_height": np.nan, "si_height_error": np.nan})
+                results.append(full_result)
+            
+            except ValueError:
                 null_fit_count += 1
                 null_fit_list.append(spectrum_index + 1)
         else:
-            pars_tmd = poly2.guess(bkgd_map_data[spectrum_index,:], x=bkgd_map_data[0,:])
-            pars_tmd['Background_c0'].set(np.mean(bkgd_map_data[spectrum_index,:]), min=0)
-            pars_tmd.update(e2g_peak.guess(spectral_data[a1g_low_index:e2g_low_index], x=map_x[a1g_low_index:e2g_low_index]))
-            pars_tmd['e2g_center'].set(min=e2g_low, max=a1g_low)
-            pars_tmd['e2g_amplitude'].set(min=1.e-09)
-            pars_tmd['e2g_sigma'].set(max=100)
-            pars_tmd.update(a1g_peak.guess(spectral_data[a1g_up_index:a1g_low_index], x=map_x[a1g_up_index:a1g_low_index]))
-            pars_tmd['a1g_center'].set(min=a1g_low, max=a1g_up)
-            pars_tmd['a1g_amplitude'].set(min=1.e-09)
-            pars_tmd['a1g_sigma'].set(max=100)
-            pars_tmd.update(lam_peak.guess(spectral_data[lam_up_index:a1g_up_index], x=map_x[lam_up_index:a1g_up_index]))
-            pars_tmd['lam_center'].set(min=a1g_up, max=lam_up)
-            pars_tmd['lam_amplitude'].set(min=1.e-09)
-            #pars_tmd['lam_sigma'].set(max=100)
-            out_tmd = model_tmd.fit(spectral_data, pars_tmd, x=map_x)
-
-            if ((out_tmd.redchi)/(out_poly.redchi)) < 0.975:
-                full_result = {}
-                if 'report' in map_flag:
-                    print(f'Spectrum: {spectrum_index}')
-                    print(out_tmd.fit_report(show_correl=False))
-                
-                if 'plot' in map_flag:
-                    fig, ax = plt.subplots(figsize=(10, 6))
-                    ax.plot(map_x, spectral_data, 'o', label='Data', markersize=4)
-                    ax.plot(map_x, out_tmd.best_fit, '-', label='Fit', linewidth=2)
-                    ax.set_xlabel('Wavenumber (cm⁻¹)')
-                    ax.set_ylabel('Intensity (counts)')
-                    ax.set_title(f'Spectrum {spectrum_index + 1}')
-                    ax.legend()
-                    ax.grid(True, alpha=0.3)
-                    plt.tight_layout()
-                    plt.show()
-                
-                try:
-                    multiple_output(full_result, out_tmd, silicon=False)
-                    full_result.update({'a1g-e2g_spacing': (full_result['a1g_center'] - full_result['e2g_center'])})
-                    full_result.update({'a1g-e2g_spacing_error': (np.sqrt(full_result['a1g_center_error']**2 + full_result['e2g_center_error']**2))})
-                    full_result.update({'spectrum_index': spectrum_index})
-                    full_result.update({"si_amplitude": np.nan, "si_amplitude_error": np.nan, "si_center": np.nan, "si_center_error": np.nan, 
-                                        "si_fwhm": np.nan, "si_fwhm_error": np.nan, "si_height": np.nan, "si_height_error": np.nan})
-                    results.append(full_result)
-                
-                except ValueError:
-                    null_fit_count += 1
-                    null_fit_list.append(spectrum_index + 1)
-            else:
-                null_fit_count += 1
-                null_fit_list.append(spectrum_index + 1)
+            null_fit_count += 1
+            null_fit_list.append(spectrum_index + 1)
     
     headings = [
         "spectrum_index",
