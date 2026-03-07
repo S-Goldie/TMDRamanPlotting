@@ -8,6 +8,8 @@ License: MIT
 Comments: V2.1 assumes MoS2 is the target material. 
 Other materials with different peak parameters will 
 likely experience instability with fitting and analysis. 
+
+There are still issues with the very low intensity PL spectra.
 """
 
 __author__ = "Stuart J Goldie, Nora Campoli"
@@ -16,14 +18,14 @@ __license__ = "MIT"
 
 import os
 import numpy as np
+import math
+import csv
 import matplotlib.pyplot as plt
 from tkinter import Tk
 from scipy import stats
 from lmfit.models import PolynomialModel, LorentzianModel
 from tkinter.filedialog import askdirectory
 #from FunctionBank import multiple_output
-import csv
-
 
 #%% Functions
 # Set-up functions and constants in relevant units
@@ -53,6 +55,7 @@ def multiple_output(destination, source, silicon=True):
         peak_output(destination, source, 'si')
     peak_output(destination, source, 'e2g')
     peak_output(destination, source, 'a1g')
+    peak_output(destination, source, "lam")
 
 def multiple_output_PL(destination, source, use_trion=True):
     """stores fitted outputs for each PL peak in turn"""
@@ -121,7 +124,6 @@ def find_raman_peaks(data, start_index, material="MoS2"):
 
     return [start_index + A1g_peak_index, start_index + E2g_peak_index]
 
-import math
 
 def format_with_error(value, error):
     """
@@ -164,8 +166,8 @@ lam = 532 #nm
 material = "MoS2"
 
 peak_configs = {
-        "MoS2": {"A1g_upper": 415, "A1g_lower": 395, "E2g_lower": 375},
-        "WS2": {"A1g_upper": 422, "A1g_lower": 400, "E2g_lower": 375},
+        "MoS2": {"A1g_upper": 425, "A1g_lower": 395, "E2g_lower": 375, "2LA(M)_upper": 480},
+        "WS2": {"A1g_upper": 422, "A1g_lower": 400, "E2g_lower": 375, "2LA(M)_upper": 480},
     }
 
 #%% Map Analysis
@@ -208,12 +210,12 @@ try:
     bkgd_map_data = raman_modes_map_data[
         :,
         (raman_modes_map_data[0, :] < peak_configs[material]["E2g_lower"])
-        | (raman_modes_map_data[0, :] > peak_configs[material]["A1g_upper"])
+        | (raman_modes_map_data[0, :] > 550)
     ]
     bkgd_map_data = bkgd_map_data[
         :,
-        (bkgd_map_data[0, :] < 505)
-        | (bkgd_map_data[0, :] > 535)
+        (bkgd_map_data[0, :] < 515)
+        | (bkgd_map_data[0, :] > 525)
     ]
     si_map_data = raman_modes_map_data[
         :,
@@ -223,7 +225,7 @@ try:
     map_x = raman_modes_map_data[0,:]
     results = []
     #map_flag = input('Additional Raman data outputs? [plot, report]')
-    map_flag = 'none'
+    map_flag = 'plot report'
     null_fit_list = []
     null_fit_count = 0
     plot_xlims = (360,430)
@@ -232,11 +234,14 @@ try:
     si_peak = LorentzianModel(nan_policy='propagate',prefix='si_')
     e2g_peak = LorentzianModel(nan_policy='propagate',prefix='e2g_')
     a1g_peak = LorentzianModel(nan_policy='propagate',prefix='a1g_')
+    lam_peak = LorentzianModel(nan_policy='propagate', prefix='lam_')
     poly2 = PolynomialModel(1,nan_policy='propagate', prefix='Background_')
     model_p = poly2
     model_si = poly2 + si_peak
-    model_tmd = poly2 + e2g_peak + a1g_peak
-    model_full = poly2 + si_peak + e2g_peak + a1g_peak
+    model_tmd = poly2 + e2g_peak + a1g_peak + lam_peak
+    model_full = poly2 + si_peak + e2g_peak + a1g_peak + lam_peak
+    lam_up = peak_configs[material]["2LA(M)_upper"]
+    lam_up_index = np.argmin(np.abs(map_x - lam_up))
     a1g_up = peak_configs[material]["A1g_upper"]
     a1g_up_index = np.argmin(np.abs(map_x - a1g_up))
     a1g_low = peak_configs[material]["A1g_lower"]
@@ -255,7 +260,9 @@ try:
         pars_si['si_amplitude'].set(min=1.e-09)
         pars_si['si_sigma'].set(max=100)
         out_si = model_si.fit(spectral_data, pars_si, x=map_x)
-        if ((out_si.redchi)/(out_poly.redchi)) < 0.975:
+        print(out_poly.fit_report(show_correl=False))
+        print(out_si.fit_report(show_correl=False))
+        if ((out_si.chisqr)/(out_poly.chisqr)) < 0.975:
             pars_full = poly2.guess(bkgd_map_data[spectrum_index,:], x=bkgd_map_data[0,:])
             pars_full['Background_c0'].set(np.mean(bkgd_map_data[spectrum_index,:]), min=0)
             pars_full.update(si_peak.guess(si_map_data[spectrum_index,:], x=si_map_data[0,:]))
@@ -270,6 +277,10 @@ try:
             pars_full['a1g_center'].set(min=a1g_low, max=a1g_up)
             pars_full['a1g_amplitude'].set(min=1.e-09)
             pars_full['a1g_sigma'].set(max=100)
+            pars_full.update(lam_peak.guess(spectral_data[lam_up_index:a1g_up_index], x=map_x[lam_up_index:a1g_up_index]))
+            pars_full['lam_center'].set(min=a1g_up, max=lam_up)
+            pars_full['lam_amplitude'].set(min=1.e-09)
+            #pars_full['lam_sigma'].set(max=200)
             out_tmd = model_full.fit(spectral_data, pars_full, x=map_x)
             
             if ((out_tmd.redchi)/(out_si.redchi)) < 0.975:
@@ -314,6 +325,10 @@ try:
             pars_tmd['a1g_center'].set(min=a1g_low, max=a1g_up)
             pars_tmd['a1g_amplitude'].set(min=1.e-09)
             pars_tmd['a1g_sigma'].set(max=100)
+            pars_tmd.update(lam_peak.guess(spectral_data[lam_up_index:a1g_up_index], x=map_x[lam_up_index:a1g_up_index]))
+            pars_tmd['lam_center'].set(min=a1g_up, max=lam_up)
+            pars_tmd['lam_amplitude'].set(min=1.e-09)
+            #pars_tmd['lam_sigma'].set(max=100)
             out_tmd = model_tmd.fit(spectral_data, pars_tmd, x=map_x)
 
             if ((out_tmd.redchi)/(out_poly.redchi)) < 0.975:
@@ -376,12 +391,20 @@ try:
         "a1g_fwhm_error",
         "a1g_height",
         "a1g_height_error",
+        "lam_amplitude",
+        "lam_amplitude_error",
+        "lam_center",
+        "lam_center_error",
+        "lam_fwhm",
+        "lam_fwhm_error",
+        "lam_height",
+        "lam_height_error",
         "a1g-e2g_spacing",
         "a1g-e2g_spacing_error"
     ]
     result_array = np.array([[row[h] for h in headings] for row in results])
-    np.savetxt(os.path.join(directory, 'map_fitting.csv'), result_array, 
-               delimiter=',', header=','.join(headings), comments='')
+    #np.savetxt(os.path.join(directory, 'map_fitting.csv'), result_array, 
+    #           delimiter=',', header=','.join(headings), comments='')
     
     print('Spectra processed: ' + str(spectrum_index + 1))
     if null_fit_count != 0:
@@ -430,8 +453,8 @@ try:
     print('_______________________________________________')
     
     representative_spectrum_data = np.column_stack((raman_modes_map_data[0, :], raman_modes_map_data[representative_index + 1, :]))
-    np.savetxt(os.path.join(directory, 'representative_spectrum.csv'), 
-               representative_spectrum_data, delimiter=',', header='Wavenumber,Intensity', comments='')
+    #np.savetxt(os.path.join(directory, 'representative_spectrum.csv'), 
+    #           representative_spectrum_data, delimiter=',', header='Wavenumber,Intensity', comments='')
     
     plt.figure(figsize=(12/2.54, 9/2.54))
     for i in range(1, raman_modes_map_data.shape[0]):
@@ -455,7 +478,7 @@ try:
     plt.ylim((0,1.05))
     plt.title('Map Spectra')
     plt.tight_layout()
-    plt.savefig(os.path.join(directory, "map_spectra.png"), dpi=600)
+    #plt.savefig(os.path.join(directory, "map_spectra.png"), dpi=600)
 
 except NameError:
     print('No map files found in selected directory. Ensure the map file is suffixed \'_map\'.')
@@ -502,6 +525,7 @@ try:
 
         pars_PL_AB = poly_PL.guess(PL_intensity, x=PL_energy)
         pars_PL_AB.update(xb_peak.guess(PL_intensity, x=PL_energy))
+        #pars_PL_AB['PLbkgd_c0'].set(min=0)
         pars_PL_AB['xb_center'].set(value=PL_XB_CENTER)
         pars_PL_AB['xb_amplitude'].set(min=1.e-09)
         pars_PL_AB.update(xa_peak.guess(PL_intensity, x=PL_energy))
@@ -510,15 +534,19 @@ try:
         out_PL_AB = model_PL_AB.fit(PL_intensity, pars_PL_AB, x=PL_energy)
 
         pars_PL = poly_PL.guess(PL_intensity, x=PL_energy)
+        #pars_PL['PLbkgd_c0'].set(min=0)
         pars_PL.update(xb_peak.guess(PL_intensity, x=PL_energy))
         pars_PL['xb_center'].set(value=PL_XB_CENTER)
         pars_PL['xb_amplitude'].set(min=1.e-09)
+        #pars_PL['xb_sigma'].set(max=0.1)
         pars_PL.update(xa_peak.guess(PL_intensity, x=PL_energy))
         pars_PL['xa_center'].set(value=PL_XA_CENTER)
         pars_PL['xa_amplitude'].set(min=1.e-09)
+        #pars_PL['xa_sigma'].set(max=0.1)
         pars_PL.update(xtneg_peak.guess(PL_intensity, x=PL_energy))
         pars_PL['xtneg_center'].set(value=PL_XTNEG_CENTER)
         pars_PL['xtneg_amplitude'].set(min=1.e-09)
+        #pars_PL['xtneg_sigma'].set(max=0.1)
         out_PL = model_PL.fit(PL_intensity, pars_PL, x=PL_energy)
 
         use_trion = (out_PL.redchi / out_PL_AB.redchi) < 0.975
@@ -527,6 +555,7 @@ try:
 
         if 'report' in pl_flag:
             print(f'PL Spectrum: {filename}')
+            print(out_PL_AB.fit_report(show_correl=False))
             print(out_PL.fit_report(show_correl=False))
 
         if 'plot' in pl_flag:
