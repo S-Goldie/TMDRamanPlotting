@@ -17,9 +17,10 @@ __version__ = "2.1"
 __license__ = "MIT"
 
 import os
-import numpy as np
 import math
 import csv
+import numpy as np
+import tqdm
 import matplotlib.pyplot as plt
 from tkinter import Tk
 from scipy import stats
@@ -225,7 +226,7 @@ try:
     map_x = raman_modes_map_data[0,:]
     results = []
     #map_flag = input('Additional Raman data outputs? [plot, report]')
-    map_flag = 'plot report'
+    map_flag = 'none'
     null_fit_list = []
     null_fit_count = 0
     plot_xlims = (360,430)
@@ -247,9 +248,11 @@ try:
     a1g_low_index = np.argmin(np.abs(map_x - a1g_low))
     e2g_low = peak_configs[material]["E2g_lower"]
     e2g_low_index = np.argmin(np.abs(map_x - e2g_low))
+    
+    print('Fitting Map Data:')
     #Complete fitting sequence. All three models are tried for each spectrum; the best improvement
     #over the polynomial background is selected, with the full model (silicon included) taking priority.
-    for spectrum_index, spectral_data in enumerate(raman_modes_map_data[1:,:]):
+    for spectrum_index, spectral_data in enumerate(tqdm.tqdm(raman_modes_map_data[1:,:])):
         pars_poly2 = poly2.guess(spectral_data, x=map_x)
         pars_poly2['Background_c0'].set(np.mean(bkgd_map_data[spectrum_index,:]), min=0)
         out_poly = model_p.fit(spectral_data, pars_poly2, x=map_x)
@@ -290,7 +293,7 @@ try:
         #pars_full['lam_sigma'].set(max=200)
         out_tmd_full = model_full.fit(spectral_data, pars_full, x=map_x)
 
-        if ((out_tmd_full.redchi)/(out_poly.redchi)) < 0.975:
+        if ((out_tmd_full.redchi)/(out_poly.redchi)) < 0.95:
             full_result = {}
             if 'report' in map_flag:
                 print(f'Spectrum: {spectrum_index}')
@@ -318,7 +321,7 @@ try:
             except ValueError:
                 null_fit_count += 1
                 null_fit_list.append(spectrum_index + 1)
-        elif ((out_tmd_no_si.redchi)/(out_poly.redchi)) < 0.975:
+        elif ((out_tmd_no_si.redchi)/(out_poly.redchi)) < 0.95:
             full_result = {}
             if 'report' in map_flag:
                 print(f'Spectrum: {spectrum_index}')
@@ -390,8 +393,8 @@ try:
         "a1g-e2g_spacing_error"
     ]
     result_array = np.array([[row[h] for h in headings] for row in results])
-    #np.savetxt(os.path.join(directory, 'map_fitting.csv'), result_array, 
-    #           delimiter=',', header=','.join(headings), comments='')
+    np.savetxt(os.path.join(directory, 'map_fitting.csv'), result_array, 
+               delimiter=',', header=','.join(headings), comments='')
     
     print('Spectra processed: ' + str(spectrum_index + 1))
     if null_fit_count != 0:
@@ -423,25 +426,25 @@ try:
         print(f'Shapiro-Wilk normality test result: p = {shapiro_test.pvalue:.3f}')
         print('______________________')
     
-    mean_spacing = np.mean(result_array[:,25])
-    histogram = np.histogram(result_array[:,25], bins = 15)
-    modal_index = np.argmax(np.histogram(result_array[:,25], bins = 15)[0])
-    modal_spacing = (np.histogram(result_array[:,25], bins = 15)[1][modal_index] + 
-                    np.histogram(result_array[:,25], bins = 15)[1][modal_index+1])/2
+    mean_spacing = np.mean(result_array[:,33])
+    histogram = np.histogram(result_array[:,33], bins = 15)
+    modal_index = np.argmax(np.histogram(result_array[:,33], bins = 15)[0])
+    modal_spacing = (np.histogram(result_array[:,33], bins = 15)[1][modal_index] + 
+                    np.histogram(result_array[:,33], bins = 15)[1][modal_index+1])/2
     if shapiro_test.pvalue >= 0.05:
-        representative_index = int(result_array[np.argmin(np.abs(result_array[:,25] - mean_spacing)),0])
+        representative_index = int(result_array[np.argmin(np.abs(result_array[:,33] - mean_spacing)),0])
     elif shapiro_test.pvalue < 0.05:
-        representative_index = int(result_array[np.argmin(np.abs(result_array[:,25] - modal_spacing)),0])
-    print(f'Mean TMD peak separation = {np.mean(result_array[:,25]):.2f} cm⁻¹')
-    print(f'SD TMD peak separation = {np.std(result_array[:,25]):.2f} cm⁻¹')
+        representative_index = int(result_array[np.argmin(np.abs(result_array[:,33] - modal_spacing)),0])
+    print(f'Mean TMD peak separation = {np.mean(result_array[:,33]):.2f} cm⁻¹')
+    print(f'SD TMD peak separation = {np.std(result_array[:,33]):.2f} cm⁻¹')
     print(f'Modal TMD peak separation = {modal_spacing:.2f} cm⁻¹')
-    print(f'Range TMD peak separation = {np.max(result_array[:,25]) - np.min(result_array[:,25]):.2f} cm⁻¹')
+    print(f'Range TMD peak separation = {np.max(result_array[:,33]) - np.min(result_array[:,33]):.2f} cm⁻¹')
     print(f'Most representative spectrum = {representative_index + 1}')
     print('_______________________________________________')
     
     representative_spectrum_data = np.column_stack((raman_modes_map_data[0, :], raman_modes_map_data[representative_index + 1, :]))
-    #np.savetxt(os.path.join(directory, 'representative_spectrum.csv'), 
-    #           representative_spectrum_data, delimiter=',', header='Wavenumber,Intensity', comments='')
+    np.savetxt(os.path.join(directory, 'representative_spectrum.csv'), 
+               representative_spectrum_data, delimiter=',', header='Wavenumber,Intensity', comments='')
     
     plt.figure(figsize=(12/2.54, 9/2.54))
     for i in range(1, raman_modes_map_data.shape[0]):
@@ -465,7 +468,7 @@ try:
     plt.ylim((0,1.05))
     plt.title('Map Spectra')
     plt.tight_layout()
-    #plt.savefig(os.path.join(directory, "map_spectra.png"), dpi=600)
+    plt.savefig(os.path.join(directory, "map_spectra.png"), dpi=600)
 
 except NameError:
     print('No map files found in selected directory. Ensure the map file is suffixed \'_map\'.')
@@ -496,7 +499,7 @@ PL_XA_CENTER = 1.88   # eV, starting center for xa peak
 PL_XTNEG_CENTER = 1.82  # eV, starting center for xt- peak
 
 try:
-    for PL_index, filename in enumerate(PL_files):
+    for PL_index, filename in enumerate(tqdm.tqdm(PL_files)):
         current_PL_data = np.genfromtxt(os.path.join(directory, filename), dtype=None, delimiter='\t')
         PL_wavenumbers.append(current_PL_data[:,0])
         PL_split_index = np.where(current_PL_data[:,0] < 1100)[0][0]
@@ -538,7 +541,7 @@ try:
         #pars_PL['xtneg_sigma'].set(max=0.1)
         out_PL = model_PL.fit(PL_intensity, pars_PL, x=PL_energy)
 
-        use_trion = (out_PL.redchi / out_PL_AB.redchi) < 0.975
+        use_trion = (out_PL.redchi / out_PL_AB.redchi) < 0.95
         if not use_trion:
             out_PL = out_PL_AB
 
@@ -561,7 +564,7 @@ try:
             ax.tick_params(labelsize=10)
             ax.legend(fontsize=10)
             plt.tight_layout()
-            plt.savefig(os.path.join(directory, str(filename) + "PL fit.png"), dpi=600)
+            plt.savefig(os.path.join(directory, filename[:-4] + "_PL_fit.png"), dpi=600)
 
         PL_fit_result = {"sample": filename[:-4]}
         multiple_output_PL(PL_fit_result, out_PL, use_trion=use_trion)
@@ -661,9 +664,10 @@ try:
     formatted_xb = format_with_error(means['xb'], stds['xb'])
     formatted_xt = format_with_error(means['xt'], stds['xt'])
     formatted_total_amp = format_with_error(means['total_amp'], stds['total_amp'])
+    formatted_height = format_with_error(np.mean(PL_intensites), np.std(PL_intensites))
     
     print('___Combined Output Stats___')
-    print(f'Mean Photoluminescence Intensity = {np.mean(PL_intensites):.2f}')
+    print(f'Mean Photoluminescence Intensity = {formatted_height}')
     print(f'Range Photoluminescence Intensity = {np.max(PL_intensites) - np.min(PL_intensites):.2f}')
     print(f'Exciton/Trion Ratio = {formatted_ratio}')
     print(f'Range Exciton/Trion Ratio = {np.nanmax([result.get("Xa/Xt ratio", np.nan) for result in PL_results]) - np.nanmin([result.get("Xa/Xt ratio", np.nan) for result in PL_results]):.2f}')
