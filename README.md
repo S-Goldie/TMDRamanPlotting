@@ -25,7 +25,7 @@ A standard anaconda installation includes most required packages [click here for
 
 #### Python Code ####
 
-* Clone the repository `git clone https://github.com/SGoldie4/A2DfromUV/program.git`
+* Clone the repository: `git clone https://github.com/S-Goldie/TMDRamanPlotting.git`
 * Alternatively, copy `FolderAnalysis_Mk2.py` and `FunctionBank.py` to a local folder
 * Run `FolderAnalysis_Mk2.py` in your chosen python environment
 
