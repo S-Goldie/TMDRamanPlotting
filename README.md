@@ -39,13 +39,15 @@ Raman File:
 ```text
 SampleName_map.txt
 ```
-*If multiple maps are present, the largest will be used*
+*If multiple maps are present, the largest one will be used.*
+*Map data must currently be in Renishaw's standard format, with columns for x coordinate, y coordinate, Raman shift, and intensity. Other file formats may be supported in the future.*
 
 Photoluminescence Files:
 ```text
 SampleName_PL-#.txt
 ```
-*Multiple spectra can be analysed simultaneously for comparison, using '#' to number the spectra.*
+*Multiple spectra can be analysed simultaneously for comparison; use '#' to number the spectra.*
+*Save each PL spectrum as an individual two-column x,y file, with the Raman shift in the first column.*
 
 #### Workflow ####
 1. Launch the software.
